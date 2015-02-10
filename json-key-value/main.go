@@ -47,9 +47,9 @@ func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 	}
 }
 
-func ErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
+func ErrorHandler(w http.ResponseWriter, r *http.Request, err travel.TraversalError) {
 	log.Printf("ErrorHandler: %v\n", err)
-	http.Error(w, err.Error(), err.Code)
+	http.Error(w, err.Error(), err.Code())
 }
 
 func main() {
