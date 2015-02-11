@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 )
 
 const (
@@ -23,6 +24,24 @@ func get_root_tree() (map[string]interface{}, error) {
 	return v, nil
 }
 
+func save_root_tree(rt map[string]interface{}) error {
+	b, err := json.Marshal(rt)
+	if err != nil {
+		return err
+	}
+	f, err := os.Create(root_tree_path)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(b)
+	return err
+}
+
+func json_output(w http.ResponseWriter, val interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(val)
+}
+
 func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 	log.Printf("PrimaryHandler: %v\n", c)
 
@@ -34,8 +53,7 @@ func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 
 	switch r.Method {
 	case "GET":
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(val)
+		json_output(w, val)
 	case "PUT":
 		d := json.NewDecoder(r.Body)
 		var b interface{}
@@ -44,7 +62,26 @@ func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 			http.Error(w, fmt.Sprintf("could not serialize request body: %v", err), 500)
 			return
 		}
+		k := c.Subpath[0]
+		c.CurrentObj[k] = b
+		err = save_root_tree(c.RootTree)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("error saving root tree: %v", err), 500)
+			return
+		}
+		json_output(w, map[string]string{
+			"success": "value written",
+		})
+		return
+	case "DELETE":
+		po := c.WalkBack(1)
+		delete(po, c.Path[len(c.Path)-1])
+
+	default:
+		w.Header().Set("Accepts", "GET,PUT,DELETE")
+		http.Error(w, "Method Not Allowed", 405)
 	}
+	return
 }
 
 func ErrorHandler(w http.ResponseWriter, r *http.Request, err travel.TraversalError) {
