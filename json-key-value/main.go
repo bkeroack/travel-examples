@@ -20,7 +20,10 @@ func get_root_tree() (map[string]interface{}, error) {
 	if err != nil {
 		return map[string]interface{}{}, err
 	}
-	json.Unmarshal(d, v)
+	err = json.Unmarshal(d, &v)
+	if err != nil {
+		return map[string]interface{}{}, err
+	}
 	return v, nil
 }
 
@@ -38,22 +41,29 @@ func save_root_tree(rt map[string]interface{}) error {
 }
 
 func json_output(w http.ResponseWriter, val interface{}) {
+	b, err := json.Marshal(val)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error serializing output: %v", err), 500)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(val)
+	w.Write(b)
 }
 
 func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 	log.Printf("PrimaryHandler: %v\n", c)
 
-	val, err := json.Marshal(c.CurrentObj)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("couldn't marshal context: %v", err), 500)
-		return
+	save_rt := func() bool {
+		err := save_root_tree(c.RootTree)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("error saving root tree: %v", err), 500)
+		}
+		return err == nil
 	}
 
 	switch r.Method {
 	case "GET":
-		json_output(w, val)
+		json_output(w, c.CurrentObj)
 	case "PUT":
 		d := json.NewDecoder(r.Body)
 		var b interface{}
@@ -63,25 +73,26 @@ func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 			return
 		}
 		k := c.Subpath[0]
-		c.CurrentObj[k] = b
-		err = save_root_tree(c.RootTree)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("error saving root tree: %v", err), 500)
-			return
+		c.CurrentObj.(map[string]interface{})[k] = b
+		if save_rt() {
+			json_output(w, map[string]string{
+				"success": "value written",
+			})
 		}
-		json_output(w, map[string]string{
-			"success": "value written",
-		})
 		return
 	case "DELETE":
 		po := c.WalkBack(1)
 		delete(po, c.Path[len(c.Path)-1])
-
+		if save_rt() {
+			json_output(w, map[string]string{
+				"success": "value deleted",
+			})
+		}
+		return
 	default:
 		w.Header().Set("Accepts", "GET,PUT,DELETE")
 		http.Error(w, "Method Not Allowed", 405)
 	}
-	return
 }
 
 func ErrorHandler(w http.ResponseWriter, r *http.Request, err travel.TraversalError) {
