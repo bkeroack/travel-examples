@@ -81,7 +81,11 @@ func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 		}
 		return
 	case "DELETE":
-		po := c.WalkBack(1)
+		po, err := c.WalkBack(1)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
 		delete(po, c.Path[len(c.Path)-1])
 		if save_rt() {
 			json_output(w, map[string]string{
@@ -105,6 +109,7 @@ func main() {
 		"": PrimaryHandler,
 	}
 	options := travel.TravelOptions{
+		StrictTraversal: true,
 		SubpathMaxLength: map[string]int{
 			"GET":    0,
 			"PUT":    1,
