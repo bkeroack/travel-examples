@@ -95,7 +95,7 @@ func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 		return
 	default:
 		w.Header().Set("Accepts", "GET,PUT,DELETE")
-		http.Error(w, "Method Not Allowed", 405)
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 	}
 }
 
@@ -109,7 +109,7 @@ func main() {
 		"": PrimaryHandler,
 	}
 	options := travel.TravelOptions{
-		StrictTraversal: true,
+		StrictTraversal: false,
 		SubpathMaxLength: map[string]int{
 			"GET":    0,
 			"PUT":    1,
