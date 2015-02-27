@@ -43,7 +43,7 @@ func save_root_tree(rt map[string]interface{}) error {
 func json_output(w http.ResponseWriter, val interface{}) {
 	b, err := json.Marshal(val)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error serializing output: %v", err), 500)
+		http.Error(w, fmt.Sprintf("Error serializing output: %v", err), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -51,12 +51,10 @@ func json_output(w http.ResponseWriter, val interface{}) {
 }
 
 func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
-	log.Printf("PrimaryHandler: %v\n", c)
-
 	save_rt := func() bool {
 		err := save_root_tree(c.RootTree)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("error saving root tree: %v", err), 500)
+			http.Error(w, fmt.Sprintf("error saving root tree: %v", err), http.StatusInternalServerError)
 		}
 		return err == nil
 	}
@@ -69,12 +67,13 @@ func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 		var b interface{}
 		err := d.Decode(&b)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("could not serialize request body: %v", err), 500)
+			http.Error(w, fmt.Sprintf("could not serialize request body: %v", err), http.StatusInternalServerError)
 			return
 		}
-		k := c.Subpath[0]
+		k := c.Path[len(c.Path)-1]
 		c.CurrentObj.(map[string]interface{})[k] = b
 		if save_rt() {
+			w.Header().Set("Location", fmt.Sprintf("http://%v/%v", r.Host, r.URL.Path))
 			json_output(w, map[string]string{
 				"success": "value written",
 			})
@@ -100,7 +99,6 @@ func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 }
 
 func ErrorHandler(w http.ResponseWriter, r *http.Request, err travel.TraversalError) {
-	log.Printf("ErrorHandler: %v\n", err)
 	http.Error(w, err.Error(), err.Code())
 }
 
@@ -109,14 +107,18 @@ func main() {
 		"": PrimaryHandler,
 	}
 	options := travel.TravelOptions{
-		StrictTraversal: false,
+		StrictTraversal:   true,
+		UseDefaultHandler: true,
 		SubpathMaxLength: map[string]int{
 			"GET":    0,
 			"PUT":    1,
 			"DELETE": 0,
 		},
 	}
-	r := travel.NewRouter(get_root_tree, hm, ErrorHandler, &options)
+	r, err := travel.NewRouter(get_root_tree, hm, ErrorHandler, &options)
+	if err != nil {
+		log.Fatalf("Error creating Travel router: %v\n", err)
+	}
 	http.Handle("/", r)
 	http.ListenAndServe("127.0.0.1:8000", nil)
 }
