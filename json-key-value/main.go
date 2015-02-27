@@ -40,16 +40,7 @@ func save_root_tree(rt map[string]interface{}) error {
 	return err
 }
 
-func json_output(w http.ResponseWriter, val interface{}) {
-	b, err := json.Marshal(val)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error serializing output: %v", err), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(b)
-}
-
+// This handler runs for every valid request
 func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 	save_rt := func() bool {
 		err := save_root_tree(c.RootTree)
@@ -59,35 +50,45 @@ func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 		return err == nil
 	}
 
+	json_output := func(val interface{}) {
+		b, err := json.Marshal(val)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error serializing output: %v", err), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(b)
+	}
+
 	switch r.Method {
 	case "GET":
-		json_output(w, c.CurrentObj)
+		json_output(c.CurrentObj) // CurrentObj is the object returned after full traveral; eg '/foo/bar': CurrentObj = root_tree["foo"]["bar"]
 	case "PUT":
 		d := json.NewDecoder(r.Body)
 		var b interface{}
 		err := d.Decode(&b)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("could not serialize request body: %v", err), http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("could not serialize request body: %v", err), http.StatusBadRequest)
 			return
 		}
 		k := c.Path[len(c.Path)-1]
-		c.CurrentObj.(map[string]interface{})[k] = b
+		c.CurrentObj.(map[string]interface{})[k] = b //maps are reference types, so a modification to CurrentObj is reflected in RootTree
 		if save_rt() {
 			w.Header().Set("Location", fmt.Sprintf("http://%v/%v", r.Host, r.URL.Path))
-			json_output(w, map[string]string{
+			json_output(map[string]string{
 				"success": "value written",
 			})
 		}
 		return
 	case "DELETE":
-		po, err := c.WalkBack(1)
+		po, err := c.WalkBack(1) // We need to get the object one node up in the root tree, so we can delete the current object
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
-		delete(po, c.Path[len(c.Path)-1])
+		delete(po, c.Path[len(c.Path)-1]) // delete the node from the last path token, which must exist otherwise the req would have 404ed
 		if save_rt() {
-			json_output(w, map[string]string{
+			json_output(map[string]string{
 				"success": "value deleted",
 			})
 		}
@@ -98,6 +99,7 @@ func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 	}
 }
 
+// Travel runs this in the event of error conditions (including 404s, etc)
 func ErrorHandler(w http.ResponseWriter, r *http.Request, err travel.TraversalError) {
 	http.Error(w, err.Error(), err.Code())
 }
@@ -108,7 +110,7 @@ func main() {
 	}
 	options := travel.TravelOptions{
 		StrictTraversal:   true,
-		UseDefaultHandler: true,
+		UseDefaultHandler: true, // DefaultHandler is empty string by default (zero value for string)
 		SubpathMaxLength: map[string]int{
 			"GET":    0,
 			"PUT":    1,
