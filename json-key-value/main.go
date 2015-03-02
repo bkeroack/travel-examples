@@ -45,7 +45,7 @@ func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 	save_rt := func() bool {
 		err := save_root_tree(c.RootTree)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("error saving root tree: %v", err), http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("Error saving root tree: %v", err), http.StatusInternalServerError)
 		}
 		return err == nil
 	}
@@ -68,7 +68,7 @@ func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 		var b interface{}
 		err := d.Decode(&b)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("could not serialize request body: %v", err), http.StatusBadRequest)
+			http.Error(w, fmt.Sprintf("Could not serialize request body: %v", err), http.StatusBadRequest)
 			return
 		}
 		k := c.Path[len(c.Path)-1]
