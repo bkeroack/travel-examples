@@ -1,1 +1,3 @@
+.vagrant/
 json-key-value/json-key-value
+postgres-key-value/postgres-key-value

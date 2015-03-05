@@ -8,17 +8,17 @@ import (
 	_ "github.com/lib/pq"
 	"log"
 	"net/http"
-	"os"
+	//"os"
 )
 
 var db *sql.DB
 
 func get_root_tree() (map[string]interface{}, error) {
-
+	return map[string]interface{}{}, nil
 }
 
 func save_root_tree(rt map[string]interface{}) error {
-
+	return nil
 }
 
 // This handler runs for every valid request
@@ -87,7 +87,7 @@ func ErrorHandler(w http.ResponseWriter, r *http.Request, err travel.TraversalEr
 
 func init() {
 	var err error
-	db, err = sql.Open("postgres", "postgres://keyvalue:keyvaluetest@localhost/keyvalue?sslmode=disable")
+	db, err = sql.Open("postgres", "postgres://postgres:postgres@localhost/keyvalue?sslmode=disable")
 	if err != nil {
 		log.Fatalf("Error connecting to database: %v\n", err)
 	}
