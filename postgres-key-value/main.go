@@ -91,6 +91,7 @@ func init() {
 	if err != nil {
 		log.Fatalf("Error connecting to database: %v\n", err)
 	}
+	setupTables()
 }
 
 func main() {

@@ -1,11 +1,13 @@
 #!/bin/bash
 
-apt-get update
+# Postgres 9.4 isn't available on Ubuntu trusty yet, so we need to add the PPA
+/vagrant/vagrant/apt.postgresql.org.sh
+
 apt-get dist-upgrade -y
 apt-get install -y httpie curl wget git htop postgresql golang
 apt-get autoremove -y
 
-cp /vagrant/vagrant/pg_hba.conf /etc/postgresql/9.3/main/pg_hba.conf
+cp /vagrant/vagrant/pg_hba.conf /etc/postgresql/9.4/main/pg_hba.conf
 
 service postgresql restart
 
