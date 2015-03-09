@@ -14,17 +14,53 @@ import (
 var db *sql.DB
 
 func get_root_tree() (map[string]interface{}, error) {
-	return map[string]interface{}{}, nil
+	var tree []byte
+	err := db.QueryRow("SELECT tree FROM root_tree order by id DESC LIMIT 1;").Scan(&tree) // order by sequential id
+	if err != nil {
+		return map[string]interface{}{}, fmt.Errorf("Error getting root tree: %v\n", err)
+	}
+	var rt map[string]interface{}
+	err = json.Unmarshal(tree, &rt)
+	if err != nil {
+		return map[string]interface{}{}, fmt.Errorf("Error deserializing root tree: %v\n", err)
+	}
+	return rt, nil
 }
 
 func save_root_tree(rt map[string]interface{}) error {
+	b, err := json.Marshal(rt)
+	if err != nil {
+		return fmt.Errorf("Error serializing root tree: %v\n", err)
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("Error starting transaction: %v\n", err)
+	}
+	defer tx.Rollback()
+	_, err = tx.Exec("INSERT INTO root_tree (tree) VALUES (?)", b)
+	if err != nil {
+		return fmt.Errorf("Error inserting root tree: %v\n", err)
+	}
+	err = tx.Commit()
+	if err != nil {
+		return fmt.Errorf("Error committing root tree transaction: %v\n", err)
+	}
 	return nil
 }
 
 // This handler runs for every valid request
 func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 	save_rt := func() bool {
-		err := save_root_tree(c.RootTree)
+		_, err := db.Exec("LOCK TABLE root_tree IN ACCESS EXCLUSIVE MODE;")
+		defer db.Exec("")
+		if err != nil {
+			log.Fatalf("Error locking root_tree table: %v\n", err)
+		}
+		err = c.Refresh()
+		if err != nil {
+			return false
+		}
+		err = save_root_tree(c.RootTree)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Error saving root tree: %v", err), http.StatusInternalServerError)
 		}
@@ -60,6 +96,7 @@ func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 				"success": "value written",
 			})
 		}
+		http.Error(w, "Error saving value", http.StatusInternalServerError)
 		return
 	case "DELETE":
 		po, err := c.WalkBack(1) // We need to get the object one node up in the root tree, so we can delete the current object
@@ -73,6 +110,7 @@ func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 				"success": "value deleted",
 			})
 		}
+		http.Error(w, "Error deleting value", http.StatusInternalServerError)
 		return
 	default:
 		w.Header().Set("Accepts", "GET,PUT,DELETE")
@@ -113,5 +151,5 @@ func main() {
 		log.Fatalf("Error creating Travel router: %v\n", err)
 	}
 	http.Handle("/", r)
-	http.ListenAndServe("127.0.0.1:8000", nil)
+	http.ListenAndServe("0.0.0.0:8000", nil)
 }

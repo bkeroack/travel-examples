@@ -122,5 +122,5 @@ func main() {
 		log.Fatalf("Error creating Travel router: %v\n", err)
 	}
 	http.Handle("/", r)
-	http.ListenAndServe("127.0.0.1:8000", nil)
+	http.ListenAndServe("0.0.0.0:8000", nil)
 }
