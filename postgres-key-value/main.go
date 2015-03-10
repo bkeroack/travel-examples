@@ -11,6 +11,8 @@ import (
 	//"os"
 )
 
+const RTLock = iota
+
 var db *sql.DB
 
 func get_root_tree() (map[string]interface{}, error) {
@@ -37,7 +39,7 @@ func save_root_tree(rt map[string]interface{}) error {
 		return fmt.Errorf("Error starting transaction: %v\n", err)
 	}
 	defer tx.Rollback()
-	_, err = tx.Exec("INSERT INTO root_tree (tree) VALUES (?)", b)
+	_, err = tx.Exec("INSERT INTO root_tree (tree) VALUES ($1)", b)
 	if err != nil {
 		return fmt.Errorf("Error inserting root tree: %v\n", err)
 	}
@@ -50,17 +52,25 @@ func save_root_tree(rt map[string]interface{}) error {
 
 // This handler runs for every valid request
 func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
+
+	lock_and_refresh := func() travel.TraversalError {
+		_, err := db.Exec("SELECT pg_advisory_lock($1) FROM root_tree;", RTLock)
+		if err != nil {
+			log.Printf("Error locking root_tree: %v\n", err)
+			return travel.InternalError(err.Error())
+		}
+		return c.Refresh()
+	}
+
+	unlock := func() {
+		_, err := db.Exec("SELECT pg_advisory_unlock($1) FROM root_tree;", RTLock)
+		if err != nil {
+			log.Printf("Error unlocking root_tree: %v\n", err)
+		}
+	}
+
 	save_rt := func() bool {
-		_, err := db.Exec("LOCK TABLE root_tree IN ACCESS EXCLUSIVE MODE;")
-		defer db.Exec("")
-		if err != nil {
-			log.Fatalf("Error locking root_tree table: %v\n", err)
-		}
-		err = c.Refresh()
-		if err != nil {
-			return false
-		}
-		err = save_root_tree(c.RootTree)
+		err := save_root_tree(c.RootTree)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Error saving root tree: %v", err), http.StatusInternalServerError)
 		}
@@ -88,6 +98,12 @@ func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 			http.Error(w, fmt.Sprintf("Could not serialize request body: %v", err), http.StatusBadRequest)
 			return
 		}
+		terr := lock_and_refresh()
+		defer unlock()
+		if terr != nil {
+			http.Error(w, terr.Error(), terr.Code())
+			return
+		}
 		k := c.Path[len(c.Path)-1]
 		c.CurrentObj.(map[string]interface{})[k] = b //maps are reference types, so a modification to CurrentObj is reflected in RootTree
 		if save_rt() {
@@ -95,13 +111,20 @@ func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 			json_output(map[string]string{
 				"success": "value written",
 			})
+			return
 		}
 		http.Error(w, "Error saving value", http.StatusInternalServerError)
 		return
 	case "DELETE":
-		po, err := c.WalkBack(1) // We need to get the object one node up in the root tree, so we can delete the current object
+		err := lock_and_refresh()
+		defer unlock()
 		if err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), err.Code())
+			return
+		}
+		po, terr := c.WalkBack(1) // We need to get the object one node up in the root tree, so we can delete the current object
+		if terr != nil {
+			http.Error(w, terr.Error(), 500)
 			return
 		}
 		delete(po, c.Path[len(c.Path)-1]) // delete the node from the last path token, which must exist otherwise the req would have 404ed
@@ -109,6 +132,7 @@ func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 			json_output(map[string]string{
 				"success": "value deleted",
 			})
+			return
 		}
 		http.Error(w, "Error deleting value", http.StatusInternalServerError)
 		return
