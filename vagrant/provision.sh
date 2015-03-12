@@ -16,7 +16,7 @@ service postgresql restart
 sleep 2
 
 sudo -u postgres psql -U postgres -d postgres -c "alter user postgres with password 'postgres';"
-sudo -u postgres psql -U postgres -d postgres -c "create database keyvalue with owner postgres;"
+sudo -u postgres psql -U postgres -d postgres -c "create database keyvalue with owner postgres; create database keyvalue_testing with owner postgres;"
 
 FNAME="go${GOVERSION}.linux-amd64.tar.gz"
 wget "https://storage.googleapis.com/golang/${FNAME}" -O /home/vagrant/${FNAME} -nv

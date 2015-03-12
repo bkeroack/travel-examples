@@ -60,10 +60,21 @@ func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 		w.Write(b)
 	}
 
+	check_empty := func() bool {
+		if len(c.Path) == 1 && c.Path[0] == "" {
+			http.Error(w, "Bad Request: key is required", http.StatusBadRequest)
+			return false
+		}
+		return true
+	}
+
 	switch r.Method {
 	case "GET":
 		json_output(c.CurrentObj) // CurrentObj is the object returned after full traveral; eg '/foo/bar': CurrentObj = root_tree["foo"]["bar"]
 	case "PUT":
+		if !check_empty() {
+			return
+		}
 		d := json.NewDecoder(r.Body)
 		var b interface{}
 		err := d.Decode(&b)
@@ -71,27 +82,47 @@ func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 			http.Error(w, fmt.Sprintf("Could not serialize request body: %v", err), http.StatusBadRequest)
 			return
 		}
+		var co map[string]interface{}
+		if len(c.Subpath) == 0 { // key exists
+			po, wberr := c.WalkBack(1) // c.CurrentObj is the *value*, so we have to walk back one
+			if wberr != nil {
+				http.Error(w, wberr.Error(), http.StatusInternalServerError)
+			}
+			co = po
+		} else { // key doesn't exist yet
+			co = c.CurrentObj.(map[string]interface{})
+		}
 		k := c.Path[len(c.Path)-1]
-		c.CurrentObj.(map[string]interface{})[k] = b //maps are reference types, so a modification to CurrentObj is reflected in RootTree
+		co[k] = b //maps are reference types, so a modification to CurrentObj is reflected in RootTree
 		if save_rt() {
+			log.Printf("Write: key: %v ; value: %v\n", k, b)
 			w.Header().Set("Location", fmt.Sprintf("http://%v/%v", r.Host, r.URL.Path))
 			json_output(map[string]string{
 				"success": "value written",
 			})
+			return
 		}
+		http.Error(w, "Error saving value", http.StatusInternalServerError)
 		return
 	case "DELETE":
+		if !check_empty() {
+			return
+		}
 		po, err := c.WalkBack(1) // We need to get the object one node up in the root tree, so we can delete the current object
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
-		delete(po, c.Path[len(c.Path)-1]) // delete the node from the last path token, which must exist otherwise the req would have 404ed
+		k := c.Path[len(c.Path)-1]
+		delete(po, k) // delete the node from the last path token, which must exist otherwise the req would have 404ed
 		if save_rt() {
+			log.Printf("Delete: key: %v\n", k)
 			json_output(map[string]string{
 				"success": "value deleted",
 			})
+			return
 		}
+		http.Error(w, "Error deleting value", http.StatusInternalServerError)
 		return
 	default:
 		w.Header().Set("Accepts", "GET,PUT,DELETE")
@@ -122,5 +153,6 @@ func main() {
 		log.Fatalf("Error creating Travel router: %v\n", err)
 	}
 	http.Handle("/", r)
+	log.Printf("Listening on port 8000")
 	http.ListenAndServe("0.0.0.0:8000", nil)
 }

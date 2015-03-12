@@ -99,14 +99,14 @@ func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 	case "GET":
 		json_output(c.CurrentObj) // CurrentObj is the object returned after full traveral; eg '/foo/bar': CurrentObj = root_tree["foo"]["bar"]
 	case "PUT":
+		if !check_empty() {
+			return
+		}
 		d := json.NewDecoder(r.Body)
 		var b interface{}
 		err := d.Decode(&b)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Could not serialize request body: %v", err), http.StatusBadRequest)
-			return
-		}
-		if !check_empty() {
 			return
 		}
 		terr := lock_and_refresh()
@@ -116,13 +116,13 @@ func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 			return
 		}
 		var co map[string]interface{}
-		if len(c.Subpath) == 0 {
-			po, wberr := c.WalkBack(1)
+		if len(c.Subpath) == 0 { // key exists
+			po, wberr := c.WalkBack(1) // c.CurrentObj is the *value*, so we have to walk back one
 			if wberr != nil {
 				http.Error(w, terr.Error(), http.StatusInternalServerError)
 			}
 			co = po
-		} else {
+		} else { // key doesn't exist yet
 			co = c.CurrentObj.(map[string]interface{})
 		}
 		k := c.Path[len(c.Path)-1]

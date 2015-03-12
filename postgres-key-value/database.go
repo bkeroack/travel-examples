@@ -5,6 +5,11 @@ import (
 	"log"
 )
 
+const (
+	createDb        = "CREATE TABLE root_tree (id bigserial primary key, created_datetime timestamp NOT NULL DEFAULT now(), tree jsonb NOT NULL);"
+	initialRootTree = "INSERT INTO root_tree (tree) VALUES ('{}');"
+)
+
 func createRootTreeTable() {
 	log.Printf("Creating root_tree table")
 	tx, err := db.Begin()
@@ -12,12 +17,12 @@ func createRootTreeTable() {
 		log.Fatalf("Error starting transaction: %v\n", err)
 	}
 	defer tx.Rollback()
-	_, err = tx.Exec("CREATE TABLE root_tree (id bigserial primary key, created_datetime timestamp NOT NULL DEFAULT now(), tree jsonb NOT NULL);")
+	_, err = tx.Exec(createDb)
 	if err != nil {
 		log.Fatalf("Error creating table: %v\n", err)
 	}
 	log.Printf("Inserting initial tree")
-	_, err = tx.Exec("INSERT INTO root_tree (tree) VALUES ('{}');")
+	_, err = tx.Exec(initialRootTree)
 	if err != nil {
 		log.Fatalf("Error inserting initial tree: %v\n", err)
 	}
