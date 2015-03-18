@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"github.com/bkeroack/travel"
 	_ "github.com/lib/pq"
@@ -81,7 +82,7 @@ func randomInsert(url string, k string, v string) {
 	defer wg.Done()
 	wt := random_range(int64(50))
 	time.Sleep(time.Duration(wt) * time.Millisecond)
-	req, err := http.NewRequest("PUT", fmt.Sprintf("%v/%v", url, k), bytes.NewBuffer([]byte(v)))
+	req, err := http.NewRequest("PUT", fmt.Sprintf("%v/%v", url, k), bytes.NewBuffer([]byte(fmt.Sprintf("\"%v\"", v))))
 	if err != nil {
 		log.Fatalf("Creating request object failed: %v\n", err)
 	}
@@ -96,22 +97,52 @@ func randomInsert(url string, k string, v string) {
 	if err != nil {
 		log.Fatalf("Error reading response body: k: %v, v: %v: %v\n", k, v, err)
 	}
-	log.Printf("RESPONSE: Status: %v ; Body: %v\n", resp.Status, string(body))
+	if resp.Status != "200 OK" {
+		log.Fatalf("Response error: %v %v\n", resp.Status, string(body))
+	}
+}
+
+func getCurrentRootTree() map[string]string {
+	var tree []byte
+	err := db.QueryRow("SELECT tree FROM root_tree order by id DESC LIMIT 1;").Scan(&tree) // order by sequential id
+	if err != nil {
+		log.Fatalf("Error getting root tree: %v\n", err)
+	}
+	var rt map[string]string
+	err = json.Unmarshal(tree, &rt)
+	if err != nil {
+		log.Fatalf("Error deserializing root tree: %v\n", err)
+	}
+	return rt
 }
 
 func TestSimultaneousUpdates(t *testing.T) {
-	cc := 100
+	defer db.Close()
+	cc := 50
 	setupDB()
 	r := createRouter()
 	s := httptest.NewServer(r)
 	inserts := make(map[string]string, cc)
-	for i := 0; i <= cc; i++ {
+	for i := 1; i <= cc; i++ {
 		k := random_string(uint(16))
 		v := random_string(uint(16))
 		inserts[k] = v
 		wg.Add(1)
 		go randomInsert(s.URL, k, v)
 	}
-	log.Printf("All requests spawned, waiting")
 	wg.Wait()
+	rt := getCurrentRootTree()
+	if len(rt) != cc {
+		t.Fatalf("Incorrect size: %v (expected: %v)\n", len(rt), cc)
+	}
+	for ek, ev := range inserts {
+		var cv string
+		var ok bool
+		if cv, ok = rt[ek]; !ok {
+			t.Fatalf("Key not found: %v", ek)
+		}
+		if cv != ev {
+			t.Fatalf("Incorrect value: %v (expected: %v)\n", cv, ev)
+		}
+	}
 }

@@ -8,7 +8,6 @@ import (
 	_ "github.com/lib/pq"
 	"log"
 	"net/http"
-	//"os"
 )
 
 const RTLock = iota
@@ -53,8 +52,15 @@ func save_root_tree(rt map[string]interface{}) error {
 // This handler runs for every valid request
 func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 
+	tx, err := db.Begin()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error opening transaction: %v", err), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
 	lock_and_refresh := func() travel.TraversalError {
-		_, err := db.Exec("SELECT pg_advisory_lock($1) FROM root_tree;", RTLock)
+		_, err := tx.Exec("SELECT pg_advisory_lock($1);", RTLock)
 		if err != nil {
 			log.Printf("Error locking root_tree: %v\n", err)
 			return travel.InternalError(err.Error())
@@ -63,7 +69,8 @@ func PrimaryHandler(w http.ResponseWriter, r *http.Request, c *travel.Context) {
 	}
 
 	unlock := func() {
-		_, err := db.Exec("SELECT pg_advisory_unlock($1) FROM root_tree;", RTLock)
+		_, err := tx.Exec("SELECT pg_advisory_unlock($1);", RTLock)
+		err = tx.Commit()
 		if err != nil {
 			log.Printf("Error unlocking root_tree: %v\n", err)
 		}
