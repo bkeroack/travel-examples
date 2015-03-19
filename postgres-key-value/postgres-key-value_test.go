@@ -15,7 +15,6 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
-	"time"
 )
 
 func setupDB() {
@@ -80,8 +79,6 @@ var wg sync.WaitGroup
 
 func randomInsert(url string, k string, v string) {
 	defer wg.Done()
-	wt := random_range(int64(50))
-	time.Sleep(time.Duration(wt) * time.Millisecond)
 	req, err := http.NewRequest("PUT", fmt.Sprintf("%v/%v", url, k), bytes.NewBuffer([]byte(fmt.Sprintf("\"%v\"", v))))
 	if err != nil {
 		log.Fatalf("Creating request object failed: %v\n", err)
